@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "description": "Pantry watch for the Yukhimets household. Reports low staples and food that is about to expire. It does not shop or cook.",
+    "tags": ["pantry", "hearth"]
+  },
+  "llm_config": {
+    "model_name": "grok-4.7",
+    "temperature": 0
+  },
+  "max_steps": 4,
+  "max_execution_seconds": 15,
+  "tools": [
+    {
+      "name": "pantry_sentinel",
+      "function": {
+        "description": "Reports low staples and items that expire soon from the grounded pantry.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "inquiry": { "type": "string" }
+          },
+          "required": ["inquiry"]
+        }
+      },
+      "instructions": "Call check_pantry. Report low staples and items that expire soon. Do not invent items that are not in the grounded pantry or fridge read. Do not place an order.",
+      "allow": {
+        "to_downstream": { "sly_data": [] },
+        "from_downstream": { "sly_data": [] }
+      },
+      "tools": [
+        {
+          "url": "/mcp",
+          "tools": ["check_pantry"]
+        }
+      ]
+    }
+  ]
+}

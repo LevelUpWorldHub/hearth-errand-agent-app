@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "networks": {
+    "hearth": {
+      "pantry_watch": "/pantry_watch"
+    }
+  }
+}
