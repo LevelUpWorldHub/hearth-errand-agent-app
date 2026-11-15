@@ -1,0 +1,27 @@
+import type { Metadata } from "next";
+import { Fraunces, Outfit } from "next/font/google";
+import "./globals.css";
+
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-outfit",
+});
+
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+});
+
+export const metadata: Metadata = {
+  title: "Hearth — household errand agent",
+  description:
+    "Hearth notices low staples, busy evenings, and food about to expire, then waits for one tap before it writes anything down.",
+};
+
+export default function RootLayout({ children }: LayoutProps<"/">) {
+  return (
+    <html lang="en" className={`${outfit.variable} ${fraunces.variable} h-full antialiased`}>
+      <body className="min-h-full bg-background text-foreground">{children}</body>
+    </html>
+  );
+}
