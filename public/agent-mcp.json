@@ -1,0 +1,9 @@
+{
+  "protocol": "nsdeploy-agent-mcp/v1",
+  "network": "hearth",
+  "front_man": "household_coordinator",
+  "available": true,
+  "url": "/mcp",
+  "transport": "streamable-http",
+  "tools": ["plan_dinner", "build_shopping_list", "schedule_errands", "check_pantry"]
+}

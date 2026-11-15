@@ -1,0 +1,95 @@
+{
+  "brand": "Hearth",
+  "networks": [
+    {
+      "name": "hearth",
+      "front_man": "household_coordinator",
+      "hocon": "./hearth.network.json",
+      "description": "Autonomous household errand agent. Notices low staples, busy evenings, and expiring food, then waits for one-tap approval.",
+      "tags": ["deployed", "household", "hearth"],
+      "sample_queries": [
+        "What should we cook tonight?",
+        "What is running low?",
+        "Schedule a grocery run"
+      ]
+    },
+    {
+      "name": "pantry_watch",
+      "front_man": "pantry_sentinel",
+      "hocon": "./pantry_watch.network.json",
+      "description": "Reports low staples and food that expires soon.",
+      "tags": ["deployed", "pantry"],
+      "sample_queries": ["What is running low?", "What expires soon?"]
+    }
+  ],
+  "llm_router": {
+    "base_url": "deterministic://hearth",
+    "mock": false,
+    "deterministic": true,
+    "byok_router": "/api/byok/chat",
+    "note": "The default path is an in-browser deterministic planner, so the site runs with no key. BYOK forwards only the visitor Authorization header to the router they choose and never substitutes a host key."
+  },
+  "allowed_peers": [],
+  "peer_policy": {
+    "mode": "ask",
+    "deny_origins": [],
+    "note": "Same-origin published networks can be loaded in this browser. Any other origin needs an explicit approval and is refused when the visitor denies it."
+  },
+  "agent_mcp": {
+    "protocol": "nsdeploy-agent-mcp/v1",
+    "network": "hearth",
+    "front_man": "household_coordinator",
+    "available": true,
+    "url": "/mcp",
+    "transport": "streamable-http"
+  },
+  "theme": {
+    "primary": "#c4491d"
+  },
+  "linking": {
+    "protocol": "nsdeploy-link/v1",
+    "exports": [
+      {
+        "network": "hearth",
+        "front_man": "household_coordinator",
+        "aliases": ["hearth", "household_coordinator"],
+        "url": "hearth"
+      },
+      {
+        "network": "pantry_watch",
+        "front_man": "pantry_sentinel",
+        "aliases": ["pantry_watch", "pantry_sentinel"],
+        "url": "pantry_watch"
+      }
+    ],
+    "imports": [
+      {
+        "name": "pantry_watch",
+        "url": "/pantry_watch"
+      }
+    ],
+    "link_updates": {
+      "mode": "browser-local"
+    }
+  },
+  "deployment": {
+    "mode": "application",
+    "self_contained_runtime": true,
+    "browser_mock": false,
+    "direct_byok": false,
+    "byok_proxy": "/api/byok/chat",
+    "direct_mcp_requires_cors": true,
+    "public_mcp_facade": true
+  },
+  "actions": {
+    "version": 1,
+    "agentTools": [
+      "plan_dinner",
+      "build_shopping_list",
+      "schedule_errands",
+      "check_pantry",
+      "apply_proposal"
+    ],
+    "note": "The Hearth browser runtime registers these site actions. apply_proposal is a write and requires confirmation. It updates the board only. It does not order food or send messages."
+  }
+}

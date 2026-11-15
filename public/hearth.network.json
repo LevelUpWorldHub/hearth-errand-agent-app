@@ -1,0 +1,72 @@
+{
+  "metadata": {
+    "description": "Hearth plans dinners, shopping, and errands for the Yukhimets household. It notices needs and waits for one-tap approval before anything is written down. It never places an order or sends a message.",
+    "tags": ["household", "autonomy", "hearth"]
+  },
+  "llm_config": {
+    "model_name": "grok-4.7",
+    "temperature": 0.2
+  },
+  "max_steps": 6,
+  "max_execution_seconds": 25,
+  "tools": [
+    {
+      "name": "household_coordinator",
+      "function": {
+        "description": "Front agent for the household. Notices dinner, pantry, and errand needs, delegates them, and refuses to order or message anyone without approval.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "inquiry": { "type": "string", "description": "What the person wants help with." }
+          },
+          "required": ["inquiry"]
+        }
+      },
+      "instructions": "You are the Hearth front agent. Use only the household state the website supplies. Delegate dinner and shopping to dinner_planner, errands to errand_scheduler, and pantry questions to the pantry_watch network. Never invent inventory, prices, or dietary needs. Never place an order, send a message, or change the board unless the person approves apply_proposal. If a tool fails, say so. Private context is deny-by-default; only sessionId may pass downstream.",
+      "allow": {
+        "to_downstream": { "sly_data": ["sessionId"] }
+      },
+      "tools": ["dinner_planner", "errand_scheduler", "pantry_watch"]
+    },
+    {
+      "name": "dinner_planner",
+      "function": {
+        "description": "Plans one shared dinner from the pantry and a fridge read, and lists only the ingredients that are missing.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "inquiry": { "type": "string" }
+          },
+          "required": ["inquiry"]
+        }
+      },
+      "instructions": "Plan one dinner the whole household can eat. Call plan_dinner. When a shopping list is requested, call build_shopping_list. List only ingredients that are not on hand. Respect every dietary constraint. Prefer food that expires soon and meals that fit a busy evening. Do not place an order.",
+      "tools": [
+        {
+          "url": "/mcp",
+          "tools": ["plan_dinner", "build_shopping_list"]
+        }
+      ]
+    },
+    {
+      "name": "errand_scheduler",
+      "function": {
+        "description": "Finds an open grocery window that does not overlap a busy block.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "inquiry": { "type": "string" }
+          },
+          "required": ["inquiry"]
+        }
+      },
+      "instructions": "Call schedule_errands. Do not book over a busy block. Describe the window and wait for approval before it is written onto the schedule. Do not send a message.",
+      "tools": [
+        {
+          "url": "/mcp",
+          "tools": ["schedule_errands"]
+        }
+      ]
+    }
+  ]
+}
