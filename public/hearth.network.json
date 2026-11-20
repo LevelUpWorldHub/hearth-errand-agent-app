@@ -9,6 +9,12 @@
   },
   "max_steps": 6,
   "max_execution_seconds": 25,
+  "link_slots": {
+    "pantry_watch": { "callers": ["household_coordinator"] }
+  },
+  "link_labels": {
+    "pantry_watch": "the pantry watch network"
+  },
   "tools": [
     {
       "name": "household_coordinator",

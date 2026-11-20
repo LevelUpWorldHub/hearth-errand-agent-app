@@ -5,7 +5,11 @@ import {
   planDinner,
   scheduleErrands,
 } from "@/lib/planner";
+import type { z } from "zod";
+import { type ToolName, describeIssues, householdSchema, toolArgSchemas } from "@/lib/mcp-schema";
 import type { Household, ScannedIngredient } from "@/lib/types";
+
+export const MAX_BATCH = 20;
 
 export const MCP_PROTOCOL_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 
@@ -18,10 +22,10 @@ const TOOLS = [
       type: "object",
       properties: {
         household: { type: "object", description: "Household board. Omit to use the published demo household." },
-        today: { type: "string", description: "ISO date." },
-        scan: { type: "array", items: { type: "object" } },
-        maxMinutes: { type: "number" },
-        servings: { type: "number" },
+        today: { type: "string", format: "date", description: "ISO date, YYYY-MM-DD." },
+        scan: { type: "array", maxItems: 60, items: { type: "object" } },
+        maxMinutes: { type: "integer", minimum: 5, maximum: 240 },
+        servings: { type: "integer", minimum: 1, maximum: 20 },
       },
     },
   },
@@ -33,10 +37,10 @@ const TOOLS = [
       type: "object",
       properties: {
         household: { type: "object" },
-        today: { type: "string" },
-        scan: { type: "array", items: { type: "object" } },
+        today: { type: "string", format: "date" },
+        scan: { type: "array", maxItems: 60, items: { type: "object" } },
         includeLowStaples: { type: "boolean" },
-        maxMinutes: { type: "number" },
+        maxMinutes: { type: "integer", minimum: 5, maximum: 240 },
       },
     },
   },
@@ -47,8 +51,8 @@ const TOOLS = [
       type: "object",
       properties: {
         household: { type: "object" },
-        today: { type: "string" },
-        durationMin: { type: "number" },
+        today: { type: "string", format: "date" },
+        durationMin: { type: "integer", minimum: 10, maximum: 240 },
       },
     },
   },
@@ -59,8 +63,8 @@ const TOOLS = [
       type: "object",
       properties: {
         household: { type: "object" },
-        today: { type: "string" },
-        withinDays: { type: "number" },
+        today: { type: "string", format: "date" },
+        withinDays: { type: "integer", minimum: 0, maximum: 60 },
       },
     },
   },
@@ -77,39 +81,13 @@ export type McpDispatch =
   | { kind: "empty"; status: number }
   | { kind: "json"; status: number; body: unknown };
 
-function coerceHousehold(input: unknown, today: string): Household {
-  if (!input || typeof input !== "object") return buildDemoHousehold(today);
-  const candidate = input as Household;
-  if (!Array.isArray(candidate.members) || !Array.isArray(candidate.pantry) || !Array.isArray(candidate.schedule)) {
-    return buildDemoHousehold(today);
-  }
+function withDefaults(input: z.infer<typeof householdSchema> | undefined, today: string): Household {
   const demo = buildDemoHousehold(today);
+  if (!input) return demo;
   return {
     ...demo,
-    ...candidate,
-    shoppingList: candidate.shoppingList ?? [],
-    receipts: candidate.receipts ?? [],
-    committedDinner: candidate.committedDinner ?? null,
-  };
-}
-
-function asScan(input: unknown): ScannedIngredient[] {
-  if (!Array.isArray(input)) return [];
-  return input.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
-    const record = entry as ScannedIngredient;
-    if (typeof record.name !== "string" || typeof record.quantity !== "number" || typeof record.unit !== "string") {
-      return [];
-    }
-    return [
-      {
-        name: record.name,
-        quantity: record.quantity,
-        unit: record.unit,
-        confidence: typeof record.confidence === "number" ? record.confidence : 1,
-      },
-    ];
-  });
+    ...Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)),
+  } as Household;
 }
 
 function toolResult(id: string | number | null, payload: unknown, isError = false): McpDispatch {
@@ -137,41 +115,42 @@ function errorResult(
   return { kind: "json", status, body: { jsonrpc: "2.0", id, error: { code, message } } };
 }
 
-function callTool(name: string, args: Record<string, unknown>, today: string): unknown {
-  const day = typeof args.today === "string" ? args.today : today;
-  const household = coerceHousehold(args.household, day);
-  const scan = asScan(args.scan);
+type ToolOutcome = { ok: true; payload: unknown } | { ok: false; message: string };
+
+function callTool(name: ToolName, rawArgs: unknown, today: string): ToolOutcome {
+  const parsed = toolArgSchemas[name].safeParse(rawArgs ?? {});
+  if (!parsed.success) return { ok: false, message: `Invalid arguments for ${name}. ${describeIssues(parsed.error)}` };
+  const args = parsed.data as {
+    household?: z.infer<typeof householdSchema>;
+    today?: string;
+    scan?: ScannedIngredient[];
+    maxMinutes?: number;
+    servings?: number;
+    includeLowStaples?: boolean;
+    durationMin?: number;
+    withinDays?: number;
+  };
+  const day = args.today ?? today;
+  const household = withDefaults(args.household, day);
+  const scan = args.scan ?? [];
   if (name === "plan_dinner") {
-    return planDinner(household, {
-      today: day,
-      scan,
-      maxMinutes: typeof args.maxMinutes === "number" ? args.maxMinutes : undefined,
-      servings: typeof args.servings === "number" ? args.servings : undefined,
-    });
+    return { ok: true, payload: planDinner(household, { today: day, scan, maxMinutes: args.maxMinutes, servings: args.servings }) };
   }
   if (name === "build_shopping_list") {
-    const plan = planDinner(household, {
-      today: day,
-      scan,
-      maxMinutes: typeof args.maxMinutes === "number" ? args.maxMinutes : 30,
-    });
-    return buildShoppingList(household, day, {
-      extras: plan.missing,
-      includeLowStaples: args.includeLowStaples !== false,
-      scan,
-    });
+    const plan = planDinner(household, { today: day, scan, maxMinutes: args.maxMinutes ?? 30 });
+    return {
+      ok: true,
+      payload: buildShoppingList(household, day, {
+        extras: plan.missing,
+        includeLowStaples: args.includeLowStaples !== false,
+        scan,
+      }),
+    };
   }
   if (name === "schedule_errands") {
-    return scheduleErrands(
-      household,
-      day,
-      typeof args.durationMin === "number" ? args.durationMin : 45,
-    );
+    return { ok: true, payload: scheduleErrands(household, day, args.durationMin ?? 45) };
   }
-  if (name === "check_pantry") {
-    return checkPantry(household, day, typeof args.withinDays === "number" ? args.withinDays : 2);
-  }
-  return { error: `Unknown tool ${name}.` };
+  return { ok: true, payload: checkPantry(household, day, args.withinDays ?? 2) };
 }
 
 export function handleJsonRpc(body: unknown, ctx: { today: string }): McpDispatch {
@@ -181,6 +160,9 @@ export function handleJsonRpc(body: unknown, ctx: { today: string }): McpDispatc
   const message = body as Rpc;
   if (message.jsonrpc !== "2.0" || typeof message.method !== "string") {
     return errorResult(message.id ?? null, -32600, "Invalid request.", 400);
+  }
+  if (message.id !== undefined && message.id !== null && typeof message.id !== "string" && typeof message.id !== "number") {
+    return errorResult(null, -32600, "Invalid request id.", 400);
   }
   const id = message.id ?? null;
   const isNotification = message.id === undefined;
@@ -213,16 +195,25 @@ export function handleJsonRpc(body: unknown, ctx: { today: string }): McpDispatc
     return { kind: "json", status: 200, body: { jsonrpc: "2.0", id, result: { tools: TOOLS } } };
   }
   if (message.method === "tools/call") {
-    const params = message.params ?? {};
-    const name = typeof params.name === "string" ? params.name : "";
-    const args =
-      params.arguments && typeof params.arguments === "object"
-        ? (params.arguments as Record<string, unknown>)
-        : {};
-    if (!name) return errorResult(id, -32602, "Tool name is required.");
-    const known = TOOLS.some((tool) => tool.name === name);
-    if (!known) return toolResult(id, { error: `Unknown tool ${name}.` }, true);
-    return toolResult(id, callTool(name, args, ctx.today), false);
+    const params = message.params;
+    if (params !== undefined && (params === null || typeof params !== "object" || Array.isArray(params))) {
+      return errorResult(id, -32602, "params must be an object.", 400);
+    }
+    const name = typeof params?.name === "string" ? params.name : "";
+    if (!name) return errorResult(id, -32602, "Tool name is required.", 400);
+    if (!(name in toolArgSchemas)) return errorResult(id, -32602, `Unknown tool ${name.slice(0, 60)}.`, 400);
+    const rawArgs = params?.arguments;
+    if (rawArgs !== undefined && (rawArgs === null || typeof rawArgs !== "object" || Array.isArray(rawArgs))) {
+      return errorResult(id, -32602, "arguments must be an object.", 400);
+    }
+    let outcome: ToolOutcome;
+    try {
+      outcome = callTool(name as ToolName, rawArgs, ctx.today);
+    } catch {
+      return errorResult(id, -32603, `The ${name} tool failed on this input.`, 500);
+    }
+    if (!outcome.ok) return errorResult(id, -32602, outcome.message, 400);
+    return toolResult(id, outcome.payload, false);
   }
   if (isNotification) return { kind: "empty", status: 202 };
   return errorResult(id, -32601, `Method not found: ${message.method}.`);
@@ -231,6 +222,9 @@ export function handleJsonRpc(body: unknown, ctx: { today: string }): McpDispatc
 export function handleJsonRpcBatch(body: unknown, ctx: { today: string }): McpDispatch {
   if (!Array.isArray(body)) return handleJsonRpc(body, ctx);
   if (body.length === 0) return errorResult(null, -32600, "Invalid request.", 400);
+  if (body.length > MAX_BATCH) {
+    return errorResult(null, -32600, `Batch too large. Send at most ${MAX_BATCH} requests.`, 400);
+  }
   const responses = body
     .map((entry) => handleJsonRpc(entry, ctx))
     .filter((entry) => entry.kind === "json")

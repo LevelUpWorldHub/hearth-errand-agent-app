@@ -36,6 +36,9 @@ export type AgentNetwork = {
   llm_config?: { model_name?: string; temperature?: number };
   max_steps?: number;
   max_execution_seconds?: number;
+  /** Bare peer names an agent may call. The reference runtime binds them through links.json. */
+  link_slots?: Record<string, { callers?: string[] }>;
+  link_labels?: Record<string, string>;
   tools: AgentNode[];
 };
 
@@ -186,6 +189,22 @@ export function validateNetwork(
     return { ok: false, error: `Front agent ${frontMan} is not in the network.` };
   }
   const peers = new Set(options?.peers ?? []);
+  if (network.link_slots !== undefined) {
+    if (!network.link_slots || typeof network.link_slots !== "object" || Array.isArray(network.link_slots)) {
+      return { ok: false, error: "link_slots must be an object." };
+    }
+    for (const [slot, spec] of Object.entries(network.link_slots)) {
+      if (names.includes(slot)) return { ok: false, error: `Link slot ${slot} has the same name as an agent.` };
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+        return { ok: false, error: `Link slot ${slot} is invalid.` };
+      }
+      const callers = spec.callers;
+      if (callers !== undefined && (!Array.isArray(callers) || callers.some((caller) => !names.includes(caller)))) {
+        return { ok: false, error: `Link slot ${slot} names an unknown caller.` };
+      }
+      peers.add(slot);
+    }
+  }
   for (const agent of network.tools) {
     if (agent.instructions !== undefined && typeof agent.instructions !== "string") {
       return { ok: false, error: `Agent ${agent.name} has invalid instructions.` };

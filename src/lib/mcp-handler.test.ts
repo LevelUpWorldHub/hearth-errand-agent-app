@@ -68,7 +68,8 @@ describe("MCP handler", () => {
       { today },
     );
     if (missing.kind !== "json") throw new Error("expected json");
-    expect((missing.body as { result: { isError: boolean } }).result.isError).toBe(true);
+    expect(missing.status).toBe(400);
+    expect((missing.body as { error: { code: number } }).error.code).toBe(-32602);
   });
 
   it("accepts a notification and a batch", () => {

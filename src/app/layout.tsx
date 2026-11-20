@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     "Hearth notices low staples, busy evenings, and food about to expire, then waits for one tap before it writes anything down.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${outfit.variable} ${fraunces.variable} h-full antialiased`}>
       <body className="min-h-full bg-background text-foreground">{children}</body>

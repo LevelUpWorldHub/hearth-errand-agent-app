@@ -26,7 +26,7 @@ describe("vision parsing and key routing", () => {
   it("blocks unsafe router URLs", () => {
     expect(assertRouterUrl("https://api.x.ai/v1").hostname).toBe("api.x.ai");
     expect(() => assertRouterUrl("http://api.x.ai/v1")).toThrow(/https/);
-    expect(() => assertRouterUrl("https://169.254.169.254/latest")).toThrow(/blocked/);
-    expect(assertRouterUrl("http://127.0.0.1:11434/v1").protocol).toBe("http:");
+    expect(() => assertRouterUrl("https://169.254.169.254/latest")).toThrow(/IP address/);
+    expect(() => assertRouterUrl("http://127.0.0.1:11434/v1")).toThrow(/https/);
   });
 });

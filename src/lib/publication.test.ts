@@ -39,3 +39,30 @@ describe("published agent network", () => {
     }
   });
 });
+
+describe("link slots", () => {
+  it("declares every bare peer name as a link slot", () => {
+    const network = JSON.parse(readFileSync("public/hearth.network.json", "utf8")) as {
+      link_slots?: Record<string, { callers?: string[] }>;
+      tools: { name: string; tools?: unknown[] }[];
+    };
+    const names = new Set(network.tools.map((agent) => agent.name));
+    const slots = new Set(Object.keys(network.link_slots ?? {}));
+    for (const agent of network.tools) {
+      for (const tool of agent.tools ?? []) {
+        if (typeof tool !== "string" || /^https?:\/\//.test(tool)) continue;
+        expect(names.has(tool) || slots.has(tool), `${agent.name} -> ${tool}`).toBe(true);
+      }
+    }
+    expect(network.link_slots?.pantry_watch?.callers).toEqual(["household_coordinator"]);
+    const validated = validateNetwork(network, "household_coordinator");
+    expect(validated.ok).toBe(true);
+  });
+
+  it("rejects a bad link slot", () => {
+    const network = JSON.parse(readFileSync("public/hearth.network.json", "utf8")) as Record<string, unknown>;
+    expect(validateNetwork({ ...network, link_slots: [] }, "household_coordinator").ok).toBe(false);
+    expect(validateNetwork({ ...network, link_slots: { pantry_watch: { callers: ["ghost"] } } }, "household_coordinator").ok).toBe(false);
+    expect(validateNetwork({ ...network, link_slots: {} }, "household_coordinator").ok).toBe(false);
+  });
+});
